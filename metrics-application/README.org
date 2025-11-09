@@ -137,7 +137,7 @@ This property - invariance under decomposition - is what enables scalability. Th
 :PROPERTIES:
 :ID:       3d4f0c55-7f58-4050-b60c-0e42f0e81f6c
 :END:
-#+begin_src bash :results org
+#+begin_src bash :results example :exports both
 python3 expression_demo.py
 #+end_src
 
