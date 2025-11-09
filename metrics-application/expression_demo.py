@@ -197,16 +197,16 @@ def demo():
     sql_compiler = SQLCompiler()
     pandas_compiler = PandasCompiler(datasets)
 
-    print("=== Base Metric as SQL ===")
+    print(" Base Metric as SQL ")
     print(sql_compiler.visit(base_expr))
 
-    print("\n=== Base Metric via Pandas ===")
+    print("\n Base Metric via Pandas ")
     print(pandas_compiler.visit(base_expr))
 
-    print("\n=== Filtered Metric as SQL ===")
+    print("\n Filtered Metric as SQL ")
     print(sql_compiler.visit(filtered_expr))
 
-    print("\n=== Filtered Metric via Pandas ===")
+    print("\n Filtered Metric via Pandas ")
     print(pandas_compiler.visit(filtered_expr))
 
 

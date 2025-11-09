@@ -88,23 +88,42 @@ This property - invariance under decomposition - is what enables scalability. Th
 :PROPERTIES:
 :ID:       3d4f0c55-7f58-4050-b60c-0e42f0e81f6c
 :END:
-#+begin_src bash
-  python expression_demo.py
+#+begin_src bash :results org
+python3 expression_demo.py
 #+end_src
+
+#+RESULTS:
+#+begin_src org
+ Base Metric as SQL 
+SELECT
+    region,
+    AVG(sessions.session_duration) AS avg_duration
+FROM sessions
+GROUP BY region;
+
+ Base Metric via Pandas 
+  region  avg_duration
+0   APAC          10.0
+1     EU          25.0
+2     NA          37.5
+
+ Filtered Metric as SQL 
+SELECT
+    region,
+    AVG(sessions.session_duration) AS avg_duration
+FROM (SELECT * FROM sessions WHERE session_duration > 10)
+GROUP BY region;
+
+ Filtered Metric via Pandas 
+  region  avg_duration
+0     EU          25.0
+1     NA          37.5
+#+end_src
+
 
 This script defines a tiny expression language (Dataset, Feature, Literal,
 Average, GroupBy, Filter) plus a visitor interface. Two visitors walk the same
-tree:
-
-- ``SQLVisitor`` renders a SQL statement for the "average session duration by
-  region" metric.
-- ``PandasVisitor`` computes the metric directly on an inline pandas DataFrame.
-
-Adding the ``Filter`` node shows how both visitors can be extended without
-changing the original metric definition.
-
-The logical structure of the expression is captured in ``expression_tree.d2`` if
-you want to visualize it with d2.
+tree.
 
 ** Diagrams
 :PROPERTIES:
