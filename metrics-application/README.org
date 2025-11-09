@@ -1,0 +1,178 @@
+* Architecting a metrics application
+:PROPERTIES:
+:ID:       42a8f782-7696-4b07-ad7b-d91e62613ba1
+:END:
+Modern organisations rely on metrics, yet most analytics systems struggle to remain meaningful amidst a sea of calculations. This essay explores an architectural approach to metrics applications that keeps them comprehensible as they scale.
+
+Most software applications are about managing state: users, orders, documents, workflows. They record and modify facts about the world, and in most cases, the significant differences are between individual members of a type: two contacts do not appreciate being mixed up in communication, the right order needs to be send to the right customer. The individual details are significant.
+
+However, there is another kind of system central to modern organizations, which don't manage state but derive information from data - 'metrics' applications.
+
+These are data intensive, computation-centric applications: analytics engines, observability systems - anything that performs large-scale calculations over volumes of data that are not feasible to hold in-memory. In these contexts, it is the data type (and implicitly the operations that can be performed on the type) that matters. When counting customers, their different identities as expressed by the values of their attributes are /mostly/ not relevant.
+
+Building these systems cleanly requires separation of the expression of a calculation from its representation in the execution context.
+
+** What is a metric?
+:PROPERTIES:
+:ID:       54ede398-5e4b-45d5-87a2-04dbcfbc1973
+:END:
+A metric is analogous to a function: it is a named, typed transformation that maps a defined space of inputs to a space of outputs.
+
+The name identifies it within a domain (eg "average session duration") and confers interpretability, while its type constrains its relations with other metrics.
+
+Central to the definition of the metric is the expression: ~2+2 = 4~ ∴ ~2 customers + 2 customers = 4 customers~.
+
+Metrics also possess dimensional structure. A simple value, like ~total revenue~ ($100) has a single dimension; a percentage of total (20%) implies its complement (80%), and is implicitly a component of the total (100%); a moving average is a series of momentary averages.
+
+In this sense, higher-dimensional metrics are collections of lower-dimensional metrics, just as a curve can be thought of as a collection of points.
+
+Thinking of a metric as a function clarifies both its semantics and its compositional nature: metrics can be combined, derived, and reasoned about mathematically, independent of how or where they are computed.
+
+** Expressiveness vs execution
+:PROPERTIES:
+:ID:       2115e299-73c1-47bc-9ddf-57604c8c8e00
+:END:
+The significance of a calculation is determined by the concepts attached to the data, and the relations between the data types. Purity of expression enables the definition of a calculation to say only and exactly what it means.
+
+On the other hand, in order for a calculation to be executed, the execution context needs to take account of various real world concerns like memory layout and compression, which are extraneous to the calculation, but necessary for the execution.
+
+For example, 'sum revenue by accounts which spent more than $100, grouped by region' is more expressive and easier to understand than ~SELECT SUM(transaction.value) FROM etc..~., but not executable.
+
+** Optimising to obscurity
+:PROPERTIES:
+:ID:       e55f92b2-38c3-4daa-8048-3600234031c7
+:END:
+Performance pressure in metrics applications inevitably drives optimisation, which is more easily expressed in the context of execution - the language of the storage medium.
+
+However, when the calculation is expressed in the storage system's native language, the meaning of the metric can become quite obscured by the mechanics of optimization.
+
+Moreover, this coupling breaks portability and testability, and also makes for an awkward experience when trying to reason about the calculation.
+
+** Expressions and compilers
+:PROPERTIES:
+:ID:       63d6c599-d611-46de-8d68-1565dfb2f460
+:END:
+One way to decouple expression from execution is with expression trees and compilers.
+
+A metric can be represented as an expression tree, where every node is an operation and the leaves are data sources. The tree expresses the calculation in declarative form, independent of any execution context concerns.
+
+Different compilers can then target different execution environments. A SQL compiler might emit a query plan; a Spark compiler might produce a DAG; a Pandas compiler might construct a vectorized in-memory pipeline. Each compiler translates the same high-level expression into the idioms of its execution context.
+
+The intent of each calculation remains legible, while storage media and execution environments can evolve and optimise independently. The expression language can be the language of the domain, and the compilers are interchangeable translators to the language of the execution context, retaining the advantages of high level expressiveness without sacrificing the ability to specify exactly in the execution context.
+
+** Building a domain model with metrics
+:PROPERTIES:
+:ID:       7767fc15-ef31-4f43-b7e8-739386b8b7e9
+:END:
+When metrics are defined formally by name, type, and expression, they can function as the atoms of a domain model.
+
+The name gives the metric its place in the business vocabulary; the type constrains its relations to other metrics; the expression declares how it is calculated.
+
+Some combinations of metrics are disallowed for technical reasons: you cannot sum customers and market share because they each have incompatible types - one is a count, the other a proportion.
+
+Other combinations fail for semantic reasons: summing customers and revenue is mathematically valid but meaningless within the domain.
+
+Once metrics are defined formally, it becomes possible to see both categories of constraint clearly. Type systems capture what cannot be combined mathematically; the domain modelling captures what cannot be combined conceptually.
+
+** Compositionality and scale
+:PROPERTIES:
+:ID:       3de7c552-0279-4f48-81f3-c3f56390ef14
+:END:
+Separating expression from execution allows the translator (compiler) to ensure that a calculation remains invariant under decomposition. In other words, a complex calculation can be split into sub-calculations, executed independently, and and the results safely recombined.
+
+This is the same algebraic principle that underlies functional programming, MapReduce, and relational algebra: the operations are closed, typed, and referentially transparent, so composition preserves semantics.
+
+This property - invariance under decomposition - is what enables scalability. The correctness of the overall result depends only on the correctness of the local computations and the rules of recomposition.
+
+** Python expression tree demo
+:PROPERTIES:
+:ID:       3d4f0c55-7f58-4050-b60c-0e42f0e81f6c
+:END:
+#+begin_src bash
+  python expression_demo.py
+#+end_src
+
+This script defines a tiny expression language (Dataset, Feature, Literal,
+Average, GroupBy, Filter) plus a visitor interface. Two visitors walk the same
+tree:
+
+- ``SQLVisitor`` renders a SQL statement for the "average session duration by
+  region" metric.
+- ``PandasVisitor`` computes the metric directly on an inline pandas DataFrame.
+
+Adding the ``Filter`` node shows how both visitors can be extended without
+changing the original metric definition.
+
+The logical structure of the expression is captured in ``expression_tree.d2`` if
+you want to visualize it with d2.
+
+** Diagrams
+:PROPERTIES:
+:ID:       c17ec2a9-a37e-4103-ae7e-6fc57a41d80d
+:END:
+*** ~base_expr~
+:PROPERTIES:
+:ID:       c135b006-b928-4a82-a1ed-ecc9f07f68e1
+:END:
+#+begin_src d2
+  direction: right
+
+  sessions: {
+    label: "Dataset\nsessions"
+  }
+
+  feature_duration: {
+    label: "Feature\nsession_duration"
+  }
+
+  avg_duration: {
+    label: "Average\nfeature => avg_duration"
+  }
+
+  group_region: {
+    label: "GroupBy\nby = region"
+  }
+
+  sessions -> feature_duration
+  feature_duration -> avg_duration
+  sessions -> group_region
+  avg_duration -> group_region
+
+#+end_src
+
+[[file+sys:./base_expr.svg][base_expr.svg]]
+*** ~filtered_expr~
+:PROPERTIES:
+:ID:       58359637-3ed2-420e-92d4-cf5cc66da850
+:END:
+#+begin_src d2
+direction: right
+
+  sessions: {
+    label: "Dataset\nsessions"
+  }
+
+  feature_duration: {
+    label: "Feature\nsession_duration"
+  }
+
+  avg_duration: {
+    label: "Average\nfeature => avg_duration"
+  }
+
+  filter_positive: {
+    label: "Filter\nsession_duration > 0"
+  }
+
+  filtered_group: {
+    label: "GroupBy\nby = region"
+  }
+
+  sessions -> feature_duration
+  feature_duration -> avg_duration
+  sessions -> filter_positive
+  filter_positive -> filtered_group
+  avg_duration -> filtered_group
+#+end_src
+
+[[file+sys:./filtered_expr.svg][filtered_expr.svg]]
