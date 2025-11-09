@@ -36,7 +36,7 @@ The significance of a calculation is determined by the concepts attached to the 
 
 On the other hand, in order for a calculation to be executed, the execution context needs to take account of various real world concerns like memory layout and compression, which are extraneous to the calculation, but necessary for the execution.
 
-For example, 'sum revenue by accounts which spent more than $100, grouped by region' is more expressive and easier to understand than ~SELECT SUM(transaction.value) FROM etc..~., but not executable.
+For example, 'for every customer, find the first day they overspent by more than 20% relative to their own 30-day moving average, and report how many days it took them to return to normal'. Saying that in a sentence is straightforward; expressing it in SQL requires window functions, self joins to mark the event, another pass to locate the earliest day per customer, and yet another to calculate the days until recovery, but natural language is not executable in a database.
 
 ** Optimising to obscurity
 :PROPERTIES:
@@ -56,7 +56,56 @@ One way to decouple expression from execution is with expression trees and compi
 
 A metric can be represented as an expression tree, where every node is an operation and the leaves are data sources. The tree expresses the calculation in declarative form, independent of any execution context concerns.
 
+#+begin_src python
+...
+class Dataset(Expression):
+    def __init__(self, name: str):
+        self.name = name
+
+
+class Feature(Expression):
+    def __init__(self, name: str, dataset: Dataset | None = None):
+        self.name = name
+        self.dataset = dataset
+
+
+class Literal(Expression):
+    def __init__(self, value: Union[int, float, str]):
+        self.value = value
+
+
+class Average(Expression):
+    def __init__(self, child: Expression, alias: str | None = None):
+        self.child = child
+        self.alias = alias
+...
+#+end_src
+
 Different compilers can then target different execution environments. A SQL compiler might emit a query plan; a Spark compiler might produce a DAG; a Pandas compiler might construct a vectorized in-memory pipeline. Each compiler translates the same high-level expression into the idioms of its execution context.
+
+#+begin_src python
+class SQLCompiler(ExpressionCompiler):
+    """Render the expression tree into a SQL statement."""
+
+    def compile_Dataset(self, expr: Dataset) -> str:
+        return expr.name
+
+    def compile_Feature(self, expr: Feature) -> str:
+        if expr.dataset:
+            return f"{expr.dataset.name}.{expr.name}"
+        return expr.name
+
+    def compile_Literal(self, expr: Literal) -> str:
+        if isinstance(expr.value, str):
+            return f"'{expr.value}'"
+        return str(expr.value)
+
+    def compile_Average(self, expr: Average) -> AggregationPlan:
+        feature_sql = self.compile(expr.child)
+        alias = expr.alias or f"avg_{expr.child.name}"
+        return AggregationPlan("AVG", feature_sql, alias)
+...
+#+end_src
 
 The intent of each calculation remains legible, while storage media and execution environments can evolve and optimise independently. The expression language can be the language of the domain, and the compilers are interchangeable translators to the language of the execution context, retaining the advantages of high level expressiveness without sacrificing the ability to specify exactly in the execution context.
 
@@ -93,7 +142,7 @@ python3 expression_demo.py
 #+end_src
 
 #+RESULTS:
-#+begin_src org
+#+begin_example
  Base Metric as SQL 
 SELECT
     region,
@@ -118,7 +167,7 @@ GROUP BY region;
   region  avg_duration
 0     EU          25.0
 1     NA          37.5
-#+end_src
+#+end_example
 
 
 This script defines a tiny expression language (Dataset, Feature, Literal,
